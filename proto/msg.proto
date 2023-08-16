@@ -1,0 +1,18 @@
+syntax = "proto3";
+option go_package = "./";
+package proto;
+
+message Role{
+  string id = 1;
+  uint32 level = 2;
+  uint64 coin = 3;
+}
+
+message LoginReq{
+  string account = 1;
+  string passwd = 2;
+}
+
+message LoginRsp{
+  Role role = 1;
+}
