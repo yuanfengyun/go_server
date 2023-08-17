@@ -8,11 +8,22 @@ message Role{
   uint64 coin = 3;
 }
 
-message LoginReq{
-  string account = 1;
-  string passwd = 2;
+message Req{
+  string command = 1;
+  repeated string string_params = 2;
+  repeated uint64 int_params = 3;
+  map<string,string> map_string_params = 4;
+  map<string,uint32> map_int_params = 5;
+  uint32 index = 6;
+  string json = 7;
 }
 
-message LoginRsp{
-  Role role = 1;
+message Rsp{
+  string command = 1;
+  repeated string string_params = 2;
+  repeated uint64 int_params = 3;
+  map<string,string> map_string_params = 4;
+  map<string,uint32> map_int_params = 5;
+  uint32 index = 6;
+  string json = 7;
 }

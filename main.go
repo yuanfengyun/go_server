@@ -4,19 +4,46 @@ import (
 	"fmt"
 	console "github.com/asynkron/goconsole"
 	"github.com/asynkron/protoactor-go/actor"
-	"time"
+	"go_server/actors"
+	game_actor "go_server/actors/game_actor"
+	"go_server/common"
 )
 
 func main() {
 	system := actor.NewActorSystem()
-	props := actor.PropsFromProducer(func() actor.Actor { return &GateActor{} })
+	// 启动网关actor
+	actors.StartGateActor("0.0.0.0:8000")
 
-	pid := system.Root.Spawn(props)
-	//system.Root.Send(pid, &EchoReq{Who: "Roger"})
+	fmt.Println("[info] gate started")
 
-	result, _ := system.Root.RequestFuture(pid, &EchoReq{Who: "Roger"}, 30*time.Second).Result() // await result
+	actors.StartDBActor()
+	fmt.Println("[info] db started")
 
-	fmt.Println(result)
-	fmt.Println("over")
+	actors.StartLoginActor()
+	fmt.Println("[info] login started")
+
+	game_actor.Start()
+	fmt.Println("[info] db started")
+
+	req1 := &actors.DBLoadAccountReq{
+		Account: "account",
+	}
+
+	// 更新数据库actor
+	db := actors.GetActor("db")
+	system.Root.Send(db, req1)
+	_, _ = console.ReadLine()
+
+	// 加载动态库热更
+	req := &common.HotfixReq{
+		Path:     "./dbactor.so",
+		FnName:   "Fn",
+		InitName: "InitFn",
+	}
+	system.Root.Send(db, req)
+
+	// 测试热更后效果
+	system.Root.Send(db, req1)
+
 	_, _ = console.ReadLine()
 }

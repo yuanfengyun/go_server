@@ -1,11 +1,16 @@
-package main
+package actors
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/asynkron/protoactor-go/actor"
 	"github.com/go-redis/redis"
+	"go_server/common"
 	"net"
 )
+
+type DBStartReq struct {
+}
 
 type DBLoadAccountReq struct {
 	Account string
@@ -13,7 +18,7 @@ type DBLoadAccountReq struct {
 
 type DBLoadAccountRsp struct {
 	err error
-	acc Account
+	acc common.Account
 }
 
 type DBCreatAccountReq struct {
@@ -22,12 +27,13 @@ type DBCreatAccountReq struct {
 
 type DBCreatAccountRsp struct {
 	err error
-	acc Account
+	acc common.Account
 }
 
 type DBActor struct {
 	listener *net.Listener
 	conn     *redis.Client
+	fn       func(context actor.Context) bool
 }
 
 func (this *DBActor) Start() error {
@@ -45,16 +51,30 @@ func (this *DBActor) Start() error {
 }
 
 func (this *DBActor) Receive(context actor.Context) {
+	if this.fn != nil {
+		if this.fn(context) {
+			return
+		}
+	}
+
 	switch msg := context.Message().(type) {
+	case *DBStartReq:
+		this.Start()
+	case *common.HotfixReq:
+		fn, initfn := common.GetSoFun(msg.Path, msg.FnName, msg.InitName)
+		if initfn(this) {
+			this.fn = fn
+		}
 	case *DBLoadAccountReq:
-		val, err := this.conn.Get("account_" + DBLoadAccountReq.Account).Result()
+		fmt.Println("handle DBLoadAccountReq")
+		val, err := this.conn.Get("account_" + msg.Account).Result()
 		rsp := &DBLoadAccountRsp{
 			err: err,
 		}
 		if err == nil {
 			err = json.Unmarshal([]byte(val), &rsp.acc)
 			if err != nil {
-
+				rsp.err = err
 			}
 		}
 		context.Respond(rsp)

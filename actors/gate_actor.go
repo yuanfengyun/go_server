@@ -1,32 +1,34 @@
-package main
+package actors
 
 import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
 	"github.com/asynkron/protoactor-go/actor"
-	pp "go_server/proto"
+	"github.com/golang/protobuf/proto"
+	msg "go_server/proto"
 	"io"
 	"log"
 	"net"
+	"time"
 )
 
 type Client struct {
 	Status    string //"init" "login" "role" "create_role" "game" "closing"
 	Conn      net.Conn
+	OldConn   net.Conn
 	SendQueue []byte
+	Account   string
 }
 
-type EchoReq struct {
-	Who string
-}
-
-type EchoRsp struct {
-	ret string
-}
+var client_map map[string]*Client = map[string]*Client{}
 
 type GateActor struct {
 	listener *net.Listener
+}
+
+func (this *GateActor) Start(address string) {
+	this.ListenAndServe(address)
 }
 
 func (this *GateActor) ListenAndServe(address string) {
@@ -36,19 +38,20 @@ func (this *GateActor) ListenAndServe(address string) {
 		log.Fatal(fmt.Sprintf("listen err: %v", err))
 		return
 	}
-	defer func(listener net.Listener) {
-		err := listener.Close()
-		if err != nil {
-
-		}
-		this.listener = nil
-	}(listener)
 
 	this.listener = &listener
 
 	log.Println(fmt.Sprintf("bind: %s, start listening...", address))
 
 	go func() {
+		defer func(listener net.Listener) {
+			err := listener.Close()
+			if err != nil {
+
+			}
+			this.listener = nil
+		}(listener)
+
 		for {
 			// Accept 会一直阻塞直到有新的连接建立或者listen中断才会返回
 			conn, err := listener.Accept()
@@ -63,35 +66,65 @@ func (this *GateActor) ListenAndServe(address string) {
 }
 
 func (this *GateActor) HandleConn(conn net.Conn) {
-	headbuf := make([]byte, 8)
+	headbuf := make([]byte, 4)
 	buff := make([]byte, 1024)
 	r := bufio.NewReader(conn)
+	//var client *Client = nil
+	Status := "init"
 	for {
 		_, err := io.ReadFull(r, headbuf)
 		if err != nil {
 			break
 		}
 		msglen := binary.BigEndian.Uint32(headbuf)
-		id := binary.BigEndian.Uint32(headbuf[4:])
-		body := buff[:msglen-4]
+		body := buff[:msglen]
 		_, err = io.ReadFull(r, body)
 		if err != nil {
 			break
 		}
-		err1, msg := pp.Decode(id, body)
+		req := &msg.Req{}
+		err1 := proto.Unmarshal(body, req)
 		if err1 != nil {
-			return
+			break
 		}
-		fmt.Println(msg)
+		if Status == "init" {
+			if req.Command != "login" {
+				break
+			}
+			Status = "login"
+
+			// 向登陆服发出请求
+			result, _ := System.Root.RequestFuture(
+				login_actor,
+				&LoginReq{Account: req.StringParams[0], Passwd: req.StringParams[1]},
+				10*time.Second).Result()
+
+			LoginRsp := result.(*LoginRsp)
+			if LoginRsp.err != nil {
+				break
+			}
+
+			// 检查是否已经登陆
+
+			// 登陆进游戏
+		} else if Status == "login" {
+			continue
+		}
+
+		fmt.Println(req)
 	}
+}
+
+func (this *GateActor) HandleMsg(conn net.Conn, msg *msg.Req) {
 
 }
 
 func (this *GateActor) Receive(context actor.Context) {
 	switch msg := context.Message().(type) {
-	case *EchoReq:
-		fmt.Printf("hello %v", msg.Who)
-		context.Respond("hi")
-		this.ListenAndServe("0.0.0.0:6000")
+	case *CommandReq:
+		command := msg.Command
+		if command == "start" {
+			this.Start(msg.Params[0])
+		}
 	}
 }
